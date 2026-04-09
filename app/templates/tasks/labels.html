@@ -1,0 +1,126 @@
+{% extends "partials/base.html" %}
+{% block title %}Labels – DevTrack{% endblock %}
+{% block page_title %}Labels{% endblock %}
+
+{% block topbar_actions %}
+<button class="btn btn-primary btn-sm" onclick="openModal('modalCreateLabel')">
+  <svg viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+  Nuevo label
+</button>
+{% endblock %}
+
+{% block content %}
+<div class="labels-page">
+  <div class="labels-grid" id="labelsGrid">
+    {% for label in labels %}
+    <div class="label-card" data-label-id="{{ label.id }}">
+      <div class="label-swatch" style="background:{{ label.color }}"></div>
+      <div class="label-card-body">
+        <span class="label-name">{{ label.name }}</span>
+        <span class="label-preview" style="background:{{ label.color }}20;color:{{ label.color }};border:1px solid {{ label.color }}40">
+          {{ label.name }}
+        </span>
+      </div>
+      <button class="icon-btn danger" onclick="deleteLabel({{ label.id }}, this)" title="Eliminar">
+        <svg viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/></svg>
+      </button>
+    </div>
+    {% endfor %}
+
+    {% if not labels %}
+    <div class="empty-page" style="grid-column:1/-1">
+      <div class="empty-page-icon">🏷️</div>
+      <h2>Sin labels</h2>
+      <p>Crea labels para categorizar y filtrar tus tareas.</p>
+      <button class="btn btn-primary" onclick="openModal('modalCreateLabel')">Crear primer label</button>
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+<!-- ── Modal Crear Label ─────────────────────────────────────────── -->
+<div class="modal" id="modalCreateLabel">
+  <div class="modal-dialog modal-sm">
+    <div class="modal-header">
+      <h3>Nuevo label</h3>
+      <button class="modal-close" onclick="closeModal('modalCreateLabel')">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label>Nombre *</label>
+        <input type="text" id="labelName" class="form-control" placeholder="ej. bug, feature, urgente"/>
+      </div>
+      <div class="form-group">
+        <label>Color</label>
+        <div class="color-picker-row" id="labelColorPicker">
+          {% set colors = ['#6366f1','#8b5cf6','#ec4899','#ef4444','#f97316','#f59e0b','#10b981','#06b6d4','#3b82f6','#64748b'] %}
+          {% for c in colors %}
+          <label class="color-swatch">
+            <input type="radio" name="labelColor" value="{{ c }}" {% if loop.first %}checked{% endif %}>
+            <span style="background:{{ c }}"></span>
+          </label>
+          {% endfor %}
+        </div>
+      </div>
+      <div class="form-group">
+        <label>Preview</label>
+        <span id="labelPreview" class="label-preview-demo">Label</span>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('modalCreateLabel')">Cancelar</button>
+      <button class="btn btn-primary" onclick="createLabel()">Crear label</button>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// Live preview
+document.querySelectorAll('input[name="labelColor"]').forEach(r => {
+  r.addEventListener('change', updatePreview);
+});
+function updatePreview() {
+  const color = document.querySelector('input[name="labelColor"]:checked')?.value || '#6366f1';
+  const name = document.getElementById('labelName').value || 'Label';
+  const prev = document.getElementById('labelPreview');
+  prev.style.background = color + '20';
+  prev.style.color = color;
+  prev.style.border = `1px solid ${color}40`;
+  prev.textContent = name;
+}
+document.getElementById('labelName').addEventListener('input', updatePreview);
+updatePreview();
+
+async function createLabel() {
+  const name = document.getElementById('labelName').value.trim();
+  const color = document.querySelector('input[name="labelColor"]:checked')?.value || '#6366f1';
+  if (!name) return showToast('Ingresa un nombre', 'error');
+
+  const res = await fetch('/api/labels', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name, color })
+  });
+  if (res.ok) {
+    closeModal('modalCreateLabel');
+    showToast('Label creado', 'success');
+    setTimeout(() => window.location.reload(), 600);
+  } else {
+    showToast('Error al crear label', 'error');
+  }
+}
+
+async function deleteLabel(id, btn) {
+  if (!confirm('¿Eliminar este label?')) return;
+  const res = await fetch(`/api/labels/${id}`, { method: 'DELETE' });
+  if (res.ok) {
+    btn.closest('.label-card').style.opacity = '0';
+    btn.closest('.label-card').style.transform = 'scale(0.9)';
+    setTimeout(() => btn.closest('.label-card').remove(), 300);
+    showToast('Label eliminado', 'success');
+  }
+}
+</script>
+{% endblock %}

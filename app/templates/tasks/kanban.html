@@ -1,0 +1,210 @@
+{% extends "partials/base.html" %}
+{% block title %}Kanban – DevTrack{% endblock %}
+{% block page_title %}Tablero Kanban{% endblock %}
+
+{% block topbar_actions %}
+<div class="topbar-group">
+  <!-- Project filter -->
+  <select class="form-select form-select-sm" onchange="filterByProject(this.value)">
+    <option value="">Todos los proyectos</option>
+    {% for p in projects %}
+    <option value="{{ p.id }}" {% if selected_project_id == p.id %}selected{% endif %}>{{ p.name }}</option>
+    {% endfor %}
+  </select>
+  <button class="btn btn-primary btn-sm" onclick="openTaskModal()">
+    <svg viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+    Nueva tarea
+  </button>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="kanban-wrapper">
+  <div class="kanban-board" id="kanbanBoard">
+
+    {% for status_key, col in columns.items() %}
+    <div class="kanban-column" data-status="{{ status_key }}" id="col-{{ status_key }}">
+      <div class="kanban-col-header">
+        <div class="col-header-left">
+          <span class="col-icon">{{ col.icon }}</span>
+          <h3 class="col-title">{{ col.label }}</h3>
+          <span class="col-count badge">{{ col.tasks|length }}</span>
+        </div>
+        <button class="col-add-btn" onclick="openTaskModal('{{ status_key }}')" title="Agregar tarea">+</button>
+      </div>
+
+      <div class="kanban-col-body" id="tasks-{{ status_key }}"
+           ondragover="event.preventDefault()" ondrop="onDrop(event, '{{ status_key }}')">
+        {% for task in col.tasks %}
+        <div class="task-card"
+             data-task-id="{{ task.id }}"
+             draggable="true"
+             ondragstart="onDragStart(event, {{ task.id }})"
+             ondragend="onDragEnd(event)">
+
+          <!-- Priority indicator -->
+          <div class="task-priority-bar priority-{{ task.priority.value }}"></div>
+
+          <div class="task-card-body">
+            <!-- Labels -->
+            {% if task.labels %}
+            <div class="task-labels">
+              {% for label in task.labels %}
+              <span class="task-label" style="background:{{ label.color }}20;color:{{ label.color }};border-color:{{ label.color }}40">
+                {{ label.name }}
+              </span>
+              {% endfor %}
+            </div>
+            {% endif %}
+
+            <h4 class="task-title" onclick="openTaskDetail({{ task.id }})">{{ task.title }}</h4>
+
+            {% if task.description %}
+            <p class="task-desc">{{ task.description[:80] }}{% if task.description|length > 80 %}…{% endif %}</p>
+            {% endif %}
+
+            <!-- Subtask progress -->
+            {% set prog = task.subtask_progress %}
+            {% if prog %}
+            <div class="subtask-progress">
+              <div class="subtask-bar">
+                <div class="subtask-fill" style="width:{{ prog.percent }}%"></div>
+              </div>
+              <span class="subtask-count">{{ prog.done }}/{{ prog.total }}</span>
+            </div>
+            {% endif %}
+
+            <div class="task-card-footer">
+              <div class="task-meta">
+                {% if task.due_date %}
+                <span class="task-due {% if task.due_date < now %}overdue{% endif %}">
+                  <svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+                  {{ task.due_date.strftime('%d %b') }}
+                </span>
+                {% endif %}
+                <span class="priority-chip priority-{{ task.priority.value }}">{{ task.priority.value }}</span>
+              </div>
+              <div class="task-actions">
+                <button class="icon-btn-xs" onclick="openTaskDetail({{ task.id }})" title="Ver detalle">
+                  <svg viewBox="0 0 24 24"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                </button>
+                <button class="icon-btn-xs danger" onclick="deleteTask({{ task.id }}, this)" title="Eliminar">
+                  <svg viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/></svg>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+        {% endfor %}
+
+        {% if not col.tasks %}
+        <div class="col-empty">Arrastra tareas aquí</div>
+        {% endif %}
+      </div>
+    </div>
+    {% endfor %}
+
+  </div><!-- /.kanban-board -->
+</div><!-- /.kanban-wrapper -->
+
+<!-- ══════════════════════════════════════════════════════════════════
+     MODAL: Crear / Editar tarea
+════════════════════════════════════════════════════════════════════ -->
+<div class="modal modal-wide" id="modalTask">
+  <div class="modal-dialog">
+    <div class="modal-header">
+      <h3 id="modalTaskTitle">Nueva tarea</h3>
+      <button class="modal-close" onclick="closeModal('modalTask')">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-row">
+        <div class="form-group flex-1">
+          <label>Título *</label>
+          <input type="text" id="taskTitle" class="form-control" placeholder="Descripción breve de la tarea" />
+        </div>
+      </div>
+      <div class="form-group">
+        <label>Descripción</label>
+        <textarea id="taskDescription" rows="3" class="form-control" placeholder="Detalles, contexto, criterios de aceptación..."></textarea>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Proyecto *</label>
+          <select id="taskProject" class="form-control">
+            {% for p in projects %}
+            <option value="{{ p.id }}">{{ p.name }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Estado</label>
+          <select id="taskStatus" class="form-control">
+            <option value="backlog">Backlog</option>
+            <option value="todo">To Do</option>
+            <option value="in_progress">In Progress</option>
+            <option value="paused">Paused</option>
+            <option value="done">Done</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Prioridad</label>
+          <select id="taskPriority" class="form-control">
+            <option value="low">Low</option>
+            <option value="medium" selected>Medium</option>
+            <option value="high">High</option>
+            <option value="critical">Critical</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Fecha límite</label>
+          <input type="date" id="taskDueDate" class="form-control" />
+        </div>
+      </div>
+
+      <!-- Labels -->
+      <div class="form-group">
+        <label>Labels</label>
+        <div class="labels-picker" id="labelsPicker">
+          {% for label in all_labels %}
+          <label class="label-check">
+            <input type="checkbox" class="label-checkbox" value="{{ label.id }}" />
+            <span class="label-chip" style="background:{{ label.color }}20;color:{{ label.color }};border-color:{{ label.color }}60">
+              {{ label.name }}
+            </span>
+          </label>
+          {% endfor %}
+          {% if not all_labels %}
+          <span class="text-muted text-sm"><a href="/labels">Crea labels</a> primero</span>
+          {% endif %}
+        </div>
+      </div>
+
+      <!-- Subtasks (shown in edit mode) -->
+      <div class="form-group" id="subtasksSection" style="display:none">
+        <label>Subtareas</label>
+        <div id="subtasksList"></div>
+        <div class="subtask-add-row">
+          <input type="text" id="newSubtaskInput" class="form-control" placeholder="Nueva subtarea..." />
+          <button class="btn btn-secondary btn-sm" onclick="addSubtask()">+ Agregar</button>
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('modalTask')">Cancelar</button>
+      <button class="btn btn-primary" id="saveTaskBtn" onclick="saveTask()">Crear tarea</button>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  // Pass server-side data to JS
+  const PROJECTS = {{ projects | map(attribute='id') | list | tojson }};
+  const PROJECT_MAP = {
+    {% for p in projects %}"{{ p.id }}": "{{ p.name }}"{% if not loop.last %},{% endif %}{% endfor %}
+  };
+  const SELECTED_PROJECT = {{ selected_project_id | tojson }};
+</script>
+<script src="/static/js/kanban.js"></script>
+{% endblock %}
